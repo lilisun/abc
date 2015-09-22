@@ -1,0 +1,427 @@
+<!doctype html> 
+<html lang="en"> 
+<head> 
+	<meta charset="UTF-8" />
+    <title>abc game</title>
+	<script type="text/javascript" src="js/phaser.min.js"></script>
+    <style type="text/css">
+        body {
+            margin: auto;
+            padding-top:5%;
+            background-color:#fff;
+            font-family:monospace;
+        }
+        canvas {
+            margin: auto;
+        }
+        #notes{
+            width:500px;
+            margin:auto;
+        }
+        a{
+            text-decoration:none;
+            color:#d00;
+        }a:hover{
+            color:#500;
+            text-decoration:none;
+        }
+    </style>
+</head>
+<body>
+    <div id="game"></div>
+    <br><br>
+    <div id="notes">
+        Made by <a href="http://lilisun.net/">Lili</a> (art, code) 
+        and <a href="http://emilybread.com/">Emily</a> (ui, code), 2014.<br><br>
+        Inspired by Keita Takahashi and Adam Saltsman's ALPHABET.<br>
+        Made using <a href="http://phaser.io/">Phaser</a>.<br>
+    </div>
+<script type="text/javascript">
+
+var game = new Phaser.Game(500, 400, Phaser.AUTO, 'game', { preload: preload, create: create, update: update });
+
+function preload() {
+    game.load.spritesheet('life', 'assets/life.png', 15, 15);
+    game.load.spritesheet('shadow', 'assets/shadows.png', 26, 13);
+    game.load.spritesheet('title', 'assets/titlegrow.png', 167, 400);
+    game.load.audio('select', 'assets/sound/Blip_Select.mp3');
+    game.load.audio('hit', 'assets/sound/Hit_Hurt.mp3');
+    game.load.audio('jump', 'assets/sound/Jump1.mp3');
+    for(var i=0; i<5; i++)
+    {
+        game.load.spritesheet('cap'+i, 'assets/cap'+i+'.png', 35, 47);
+    }
+    for(var i=0; i<5; i++)
+    {
+        game.load.image('lower'+i, 'assets/lower'+i+'.png');
+    }
+}
+
+var ground;
+var capital=[];
+var lower=[];
+var lives=[];
+var stun=[];
+var shadows=[];
+var title;
+
+var gamemode = "title";
+var numActive = 5;
+var numLives = 3;
+var maxLives = 3;
+var score = 0;
+var scoreText;
+var instrucText;
+var resultsText;
+    
+var selectSound;
+var hitSound;
+var jumpSound;
+    
+var keys=[];
+var menuKey;
+    
+var letterOffset3 = 190;
+var letterOffset5 = 150;
+var stunTime=100;
+
+function create() {
+
+    game.stage.backgroundColor='#fff';
+    //  We're going to be using physics, so enable the Arcade Physics system
+    game.physics.startSystem(Phaser.Physics.ARCADE);
+
+    // Here we create the ground.
+    ground = game.add.sprite(0, game.world.height - 170, '');
+    game.physics.arcade.enable(ground);
+    ground.body.immovable = true;
+    ground.scale.x=game.world.width;
+    ground.scale.y=64;
+        
+    //because they have to show up under everything else
+    for (var i=0; i<5; i++){        
+        if (i>=3){
+            shadows[i] = game.add.sprite(letterOffset5+5 + 40*i, game.world.height-179, 'shadow');
+        }else{
+            shadows[i] = game.add.sprite(letterOffset3+5 + 40*i, game.world.height-179, 'shadow');
+        }
+        shadows[i].animations.add('jump', [1,2,3,4,5,6,7], 6, false);
+        shadows[i].animations.add('grow', [4,5,6,7], 6, false);
+        shadows[i].animations.add('shrink', [1,2,3,4], 6, false);
+        game.physics.arcade.enable(shadows[i]);
+    }
+    
+    for(var i=0; i<5; i++){        
+        if (i>=3){
+            capital[i] = game.add.sprite(letterOffset5 + 40*i, -50, 'cap'+i);
+        }else{
+            capital[i] = game.add.sprite(letterOffset3 + 40*i, -50, 'cap'+i);
+        }
+
+        //  We need to enable physics on the player
+        game.physics.arcade.enable(capital[i]);
+
+        capital[i].body.bounce.y = 0;
+        capital[i].body.gravity.y = 300;
+//        capital[i].body.collideWorldBounds = true;
+
+        //  anim
+        capital[i].animations.add('jump', [1, 2, 3, 4, 5, 6, 7], 6, false);
+        capital[i].animations.add('bob', [0, 1], 2, true);
+        
+        stun[i]=0;
+    }
+    
+    for(var i=0; i<5; i++){
+        lower[i] = game.add.sprite(game.world.width+10, game.world.height - 300, 'lower'+i);
+
+        game.physics.arcade.enable(lower[i]);
+
+        lower[i].body.gravity.y = 300;
+        lower[i].body.collideWorldBounds = false;
+    }
+    
+    for(var i=0; i<3; i++)
+    {
+        lives[i] = game.add.sprite(20+i*20, 15, 'life');
+        lives[i].frame=0;
+    }
+
+    //  The score
+    scoreText = game.add.text(20, 35, 'SCORE: 0 ', 
+                              { font: "12px Arial Black", 
+                               fill: "#f44", 
+                               align: "left" });
+    instrucText = game.add.text(390, 15, '[M] TO MENU', 
+                              { font: "12px Arial Black", 
+                               fill: "#f44", 
+                               align: "center" });
+    resultsText = game.add.text(180, 75, 'GAME OVER', 
+                              { font: "20px Arial Black", 
+                               fill: "#f44", 
+                               align: "center" });
+    
+    selectSound = game.add.audio('select');
+    hitSound = game.add.audio('hit');
+    jumpSound = game.add.audio('jump');
+    
+    title = game.add.sprite(163, 0, 'title');
+    title.animations.add('grow', [1,2,3,4,5,6], 8);
+    title.animations.add('shrink', [5,4,3,2,1,0], 12);
+    title.frame=0;
+
+    //  Our controls.
+    keys[0] = game.input.keyboard.addKey(Phaser.Keyboard.A);
+    keys[1] = game.input.keyboard.addKey(Phaser.Keyboard.B);
+    keys[2] = game.input.keyboard.addKey(Phaser.Keyboard.C);
+    keys[3] = game.input.keyboard.addKey(Phaser.Keyboard.D);
+    keys[4] = game.input.keyboard.addKey(Phaser.Keyboard.E);
+    menuKey = game.input.keyboard.addKey(Phaser.Keyboard.M);
+    
+}
+    
+    var shift=80;
+    var dropped=false;
+    var startUp=false;
+    var veryBeginning=true;
+    
+function threeToFive(nextMode){
+    if (!dropped){
+        capital[3].body.y = 0;
+        capital[4].body.y = 0;
+        shadows[3].animations.play('grow');
+        shadows[4].animations.play('grow');
+        dropped=true;
+    }
+    if (capital[0].body.x >= letterOffset5){
+        //three scoot to left, two come down
+        for (var i=0; i<3; i++){
+            capital[i].body.velocity.x = -shift;
+            shadows[i].body.velocity.x = -shift;
+        }
+        if (capital[3].alpha<1){
+            capital[3].alpha += 0.035;
+            capital[4].alpha += 0.035;
+        }
+        if (shadows[3].alpha<1){
+            shadows[3].alpha += 0.04;
+            shadows[4].alpha += 0.04;
+        }
+        return true;
+    }else{
+        for (var i=0; i<3; i++){
+            capital[i].body.velocity.x = 0;
+            capital[i].body.x = letterOffset5 + 40*i;
+            shadows[i].body.velocity.x = 0;
+            shadows[i].body.x = letterOffset5+5 + 40*i;
+        }
+        capital[3].alpha = 1;
+        capital[4].alpha = 1;
+        dropped=false;
+        gamemode=nextMode;
+        return false;
+    }
+}
+    
+function fiveToThree(nextMode){
+    if(!startUp){
+        shadows[3].animations.play('shrink');
+        shadows[4].animations.play('shrink');
+        startUp=true;
+    }
+    if (capital[0].x <= letterOffset3){
+        //two go up, three scoot to right
+        for (var i=0; i<3; i++){
+            capital[i].body.velocity.x = shift;
+            shadows[i].body.velocity.x = shift;
+        }
+        if (capital[3].alpha>0){
+            capital[3].body.y -= 8;
+            capital[3].alpha -= 0.035;
+            capital[4].body.y -= 8;
+            capital[4].alpha -= 0.035;
+        }
+        if (shadows[3].alpha>0){
+            shadows[3].alpha -= 0.02;
+            shadows[4].alpha -= 0.02;
+        }
+        return true;
+    }else{
+        for (var i=0; i<3; i++){
+            capital[i].body.velocity.x = 0;
+            capital[i].body.x = letterOffset3 + 40*i;
+            shadows[i].body.velocity.x = 0;
+            shadows[i].body.x = letterOffset3+5 + 40*i;
+        }
+        capital[3].alpha = 0;
+        capital[4].alpha = 0;
+        gamemode=nextMode;
+        return false;
+    }
+}
+    
+function shrinkTitle(nextmode){
+    title.animations.play('shrink');
+    gamemode=nextmode;
+}
+    
+var bubblePlay = false;
+function update() {
+    if ( gamemode == "title" ) { 
+        if (capital[0].body.y>170 && !bubblePlay){
+            title.animations.play('grow');
+            bubblePlay=true;
+        }
+        numLives=maxLives;
+        score=0;
+        for (var i=0; i<5; i++){
+            stun[i] = 0;
+        }
+        for (var i=0; i<3; i++){
+            capital[i].animations.play('bob');
+            
+            lives[i].visible=false;
+            lives[i].frame=0;
+        }
+        if (veryBeginning){
+            veryBeginning=false;
+            for (var i=0; i<3; i++){
+                shadows[i].animations.play('grow');
+            }
+        }
+        capital[3].frame = 0;
+        capital[4].frame = 0;
+        capital[3].alpha=0;
+        capital[4].alpha=0;
+        shadows[3].alpha=0;
+        shadows[4].alpha=0;
+        scoreText.visible=false;
+        instrucText.visible=false;
+        resultsText.visible=false;
+        
+        if (keys[0].justPressed()){
+            selectSound.play();
+            numActive=3;
+            shrinkTitle("gameplay");
+        }
+        if (keys[2].justPressed()){
+            selectSound.play();
+            numActive=5;
+            shrinkTitle("3to5");
+        }
+    }
+    else if ( gamemode == "gameplay" ) {
+        scoreText.visible=true;
+        instrucText.visible=true;
+        for (var i=0; i<3; i++){
+            lives[i].visible=true;
+        }
+        
+        if (menuKey.justPressed()){
+            selectSound.play();
+            title.animations.play('grow');
+            if (numActive==5){
+                gamemode="5to3";
+            }else{
+                gamemode="title";
+            }
+        }
+    } 
+    else if ( gamemode == "endLevel" ) { 
+        instrucText.visible=true;
+        resultsText.visible=true;
+        
+        if (menuKey.justPressed()){
+            selectSound.play();
+            title.animations.play('grow');
+            if (numActive==5)
+                gamemode="5to3";
+            else
+                gamemode="title";
+        }
+    } 
+    else if ( gamemode == "3to5" ) {
+        threeToFive("gameplay");
+    }
+    else if ( gamemode == "5to3" ) {
+        fiveToThree("title");
+    }
+
+    for (var i=0; i<5; i++)
+    {
+        game.physics.arcade.collide(capital[i], ground);
+        game.physics.arcade.collide(lower[i], ground);
+    }
+    
+    for (var i=0; i<numActive; i++)
+    {
+        
+        if (gamemode=="gameplay"){
+            game.physics.arcade.overlap(capital[i], lower[i], checkCollision, null, this);
+            if (keys[i].justPressed() && capital[i].body.touching.down && stun[i]<=0){
+                jumpSound.play();
+                capital[i].body.velocity.y=-175;
+                capital[i].animations.play('jump');
+                shadows[i].animations.play('jump');
+            }
+            else if (capital[i].body.touching.down && stun[i]<=0){
+                capital[i].animations.stop();
+                shadows[i].animations.stop();
+                capital[i].frame = 0;
+            }
+            
+            if (stun[i]>0)
+                stun[i]--;
+        }
+        if (gamemode=="gameplay" || gamemode=="endLevel" || gamemode=="title"){
+            if (lower[i].body.x<-20){
+                lower[i].body.velocity.x=0;
+                lower[i].body.x=game.world.width+10;
+            }
+            
+            if (capital[i].body.touching.down && capital[i].animations.currentAnim=="jump"){
+                capital[i].animations.stop();
+                shadows[i].animations.stop();
+                capital[i].frame = 0;
+                shadows[i].frame = 0;
+            }
+        }
+    }
+    
+    if (gamemode=="gameplay"){
+        score++;
+        scoreText.text="SCORE: "+parseInt(score/4)+" ";
+        
+        //lowercase moving
+        if (Math.random() < 0.03){
+            var index = Math.floor(Math.random() * numActive);
+            if (lower[index].body.velocity.x==0)
+                lower[index].body.velocity.x = -100;
+        }
+    }
+}
+    
+
+function checkCollision(cap, lower){
+    var index = parseInt(cap.key.substring(3,4));
+    
+    if(stun[index]<=0){
+        //boom hit
+        hitSound.play();
+        capital[index].frame = 8;
+        capital[index].animations.stop();
+        capital[index].body.velocity.y=0;
+        stun[index] = stunTime;
+        
+        numLives--;
+        lives[numLives].frame=1;
+        if (numLives<=0)
+            gamemode="endLevel";
+    }
+    
+}
+
+</script>
+
+</body>
+</html>
